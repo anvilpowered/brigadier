@@ -13,13 +13,13 @@ import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import com.mojang.brigadier.tree.CommandNode;
 import com.mojang.brigadier.tree.LiteralCommandNode;
 import com.mojang.brigadier.tree.RootCommandNode;
-
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -383,11 +383,13 @@ public class CommandDispatcher<S> {
             if (reader.canRead(child.getRedirect() == null ? 2 : 1)) {
                 reader.skip();
                 if (child.getRedirect() != null) {
-                    final CommandContextBuilder<S> childContext = new CommandContextBuilder<>(this, source, child.getRedirect(), reader.getCursor());
+                    final CommandContextBuilder<S> childContext = new CommandContextBuilder<>(this, source, context, child.getRedirect(), reader.getCursor());
                     final ParseResults<S> parse = parseNodes(child.getRedirect(), reader, childContext);
                     context.withChild(parse.getContext());
-                    return new ParseResults<>(context, parse.getReader(), parse.getExceptions());
-                } else {
+                    if (child.canUse(context, parse.getReader())) {
+                        return new ParseResults<>(context, parse.getReader(), parse.getExceptions());
+                    }
+                } else if (child.canUse(context, reader)) {
                     final ParseResults<S> parse = parseNodes(child, reader, context);
                     if (potentials == null) {
                         potentials = new ArrayList<>(1);
@@ -395,10 +397,18 @@ public class CommandDispatcher<S> {
                     potentials.add(parse);
                 }
             } else {
+                final CommandNode<S> redirect = child.getRedirect();
+                if (redirect != null && redirect.getCommand() != null) {
+                    context.withCommand(redirect.getCommand());
+                }
+                if (!child.canUse(context, reader)) {
+                    continue;
+                }
+                final ParseResults<S> parse = new ParseResults<>(context, reader, Collections.emptyMap());
                 if (potentials == null) {
                     potentials = new ArrayList<>(1);
                 }
-                potentials.add(new ParseResults<>(context, reader, Collections.emptyMap()));
+                potentials.add(parse);
             }
         }
 
@@ -588,27 +598,27 @@ public class CommandDispatcher<S> {
 
         final String fullInput = parse.getReader().getString();
         final String truncatedInput = fullInput.substring(0, cursor);
+        final String truncatedInputLowerCase = truncatedInput.toLowerCase(Locale.ROOT);
         @SuppressWarnings("unchecked") final CompletableFuture<Suggestions>[] futures = new CompletableFuture[parent.getChildren().size()];
         int i = 0;
         for (final CommandNode<S> node : parent.getChildren()) {
             CompletableFuture<Suggestions> future = Suggestions.empty();
             try {
-                future = node.listSuggestions(context.build(truncatedInput), new SuggestionsBuilder(truncatedInput, start));
+                future = node.listSuggestions(context.build(truncatedInput), new SuggestionsBuilder(truncatedInput, truncatedInputLowerCase, start));
             } catch (final CommandSyntaxException ignored) {
             }
             futures[i++] = future;
         }
 
-        final CompletableFuture<Suggestions> result = new CompletableFuture<>();
-        CompletableFuture.allOf(futures).thenRun(() -> {
+        return CompletableFuture.allOf(futures).handle((voidResult, exception) -> {
             final List<Suggestions> suggestions = new ArrayList<>();
             for (final CompletableFuture<Suggestions> future : futures) {
-                suggestions.add(future.join());
+                if (!future.isCompletedExceptionally()) {
+                    suggestions.add(future.join());
+                }
             }
-            result.complete(Suggestions.merge(fullInput, suggestions));
+            return Suggestions.merge(fullInput, suggestions);
         });
-
-        return result;
     }
 
     /**

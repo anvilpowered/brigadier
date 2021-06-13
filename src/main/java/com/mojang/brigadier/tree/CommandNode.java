@@ -5,6 +5,7 @@ package com.mojang.brigadier.tree;
 
 import com.mojang.brigadier.AmbiguityConsumer;
 import com.mojang.brigadier.Command;
+import com.mojang.brigadier.ImmutableStringReader;
 import com.mojang.brigadier.RedirectModifier;
 import com.mojang.brigadier.StringReader;
 import com.mojang.brigadier.builder.ArgumentBuilder;
@@ -14,15 +15,24 @@ import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.BiPredicate;
 import java.util.function.Predicate;
-import java.util.stream.Collectors;
 
 public abstract class CommandNode<S> implements Comparable<CommandNode<S>> {
-    private Map<String, CommandNode<S>> children = new TreeMap<>();
-    private Map<String, ArgumentCommandNode<S, ?>> arguments = new LinkedHashMap<>();
+    private final Map<String, CommandNode<S>> children = new TreeMap<>();
+    private final Map<String, ArgumentCommandNode<S, ?>> arguments = new LinkedHashMap<>();
     private final Predicate<S> requirement;
+    private final BiPredicate<CommandContextBuilder<S>, ImmutableStringReader> contextRequirement;
     private final CommandNode<S> redirect;
     private final RedirectModifier<S> modifier;
     private final boolean forks;
@@ -32,6 +42,16 @@ public abstract class CommandNode<S> implements Comparable<CommandNode<S>> {
     protected CommandNode(final Command<S> command, final Predicate<S> requirement, final CommandNode<S> redirect, final RedirectModifier<S> modifier, final boolean forks) {
         this.command = command;
         this.requirement = requirement;
+        this.contextRequirement = (context, reader) -> true;
+        this.redirect = redirect;
+        this.modifier = modifier;
+        this.forks = forks;
+    }
+
+    protected CommandNode(final Command<S> command, final Predicate<S> requirement, final BiPredicate<CommandContextBuilder<S>, ImmutableStringReader> contextRequirement, final CommandNode<S> redirect, final RedirectModifier<S> modifier, final boolean forks) {
+        this.command = command;
+        this.requirement = requirement;
+        this.contextRequirement = contextRequirement;
         this.redirect = redirect;
         this.modifier = modifier;
         this.forks = forks;
@@ -59,6 +79,10 @@ public abstract class CommandNode<S> implements Comparable<CommandNode<S>> {
 
     public boolean canUse(final S source) {
         return requirement.test(source);
+    }
+
+    public boolean canUse(final CommandContextBuilder<S> context, final ImmutableStringReader reader) {
+        return contextRequirement.test(context, reader);
     }
 
     public void addChild(final CommandNode<S> node) {
@@ -141,6 +165,10 @@ public abstract class CommandNode<S> implements Comparable<CommandNode<S>> {
         return requirement;
     }
 
+    public BiPredicate<CommandContextBuilder<S>, ImmutableStringReader> getContextRequirement() {
+        return contextRequirement;
+    }
+
     public abstract String getName();
 
     public abstract String getUsageText();
@@ -163,7 +191,16 @@ public abstract class CommandNode<S> implements Comparable<CommandNode<S>> {
             input.setCursor(cursor);
             final CommandNode<S> node = children.get(text);
             if (node instanceof LiteralCommandNode<?>) {
-                return Collections.singleton(node);
+                final int argumentsCount = arguments.size();
+                if (argumentsCount == 0) {
+                    return Collections.singletonList(node);
+                } else {
+                    final List<CommandNode<S>> nodes =
+                            new ArrayList<>(argumentsCount + 1);
+                    nodes.add(node); // literals have priority over arguments
+                    nodes.addAll(arguments.values());
+                    return nodes;
+                }
             } else {
                 return arguments.values();
             }

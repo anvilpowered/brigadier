@@ -4,9 +4,15 @@
 package com.mojang.brigadier;
 
 import com.google.common.collect.Lists;
+import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.context.CommandContextBuilder;
+import com.mojang.brigadier.context.StringRange;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.mojang.brigadier.tree.ArgumentCommandNode;
+import com.mojang.brigadier.tree.CommandNode;
+import com.mojang.brigadier.suggestion.Suggestion;
+import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.tree.LiteralCommandNode;
 import org.junit.Before;
 import org.junit.Test;
@@ -17,6 +23,7 @@ import org.mockito.runners.MockitoJUnitRunner;
 import static com.mojang.brigadier.arguments.IntegerArgumentType.integer;
 import static com.mojang.brigadier.builder.LiteralArgumentBuilder.literal;
 import static com.mojang.brigadier.builder.RequiredArgumentBuilder.argument;
+import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasProperty;
 import static org.hamcrest.Matchers.is;
@@ -31,6 +38,10 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+
+import java.util.Collection;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 @RunWith(MockitoJUnitRunner.class)
 public class CommandDispatcherTest {
@@ -202,6 +213,49 @@ public class CommandDispatcherTest {
         assertThat(parse.getContext().getNodes().size(), is(1));
     }
 
+    @Test
+    public void testParseChildlessRedirect() throws Exception {
+        final CommandNode<Object> target = subject.register(literal("foo").executes(command));
+        final CommandNode<Object> redirect = subject.register(literal("redirect").redirect(target));
+
+        final ParseResults<Object> parse = subject.parse("redirect", source);
+        assertThat(parse.getContext().getCommand(), equalTo(target.getCommand()));
+        assertThat(parse.getContext().getNodes().get(0).getNode(), equalTo(redirect));
+    }
+
+    @Test
+    public void testParseContextImpermissibleLiteral() throws Exception {
+        subject.register(literal("foo").requiresWithContext((context, reader) -> {
+            assertThat(context.getNodes().size(), is(1));
+            assertThat(context.getRange(), equalTo(StringRange.between(0, 3)));
+            assertThat(reader.getCursor(), is(3));
+            return false;
+        }));
+
+        final ParseResults<Object> parse = subject.parse("foo", source);
+        assertThat(parse.getReader().getCursor(), is(0));
+        assertThat(parse.getContext().getNodes(), is(empty()));
+    }
+
+    @Test
+    public void testParseContextImpermissibleArgument() throws Exception {
+        subject.register(literal("foo")
+            .then(argument("bar", integer())
+                .requiresWithContext((context, reader) -> {
+                    assertThat(context.getNodes().size(), is(2));
+                    assertThat(context.getArguments().size(), is(1));
+                    assertThat(context.getRange(), equalTo(StringRange.between(0, 5)));
+                    assertThat(reader.getCursor(), is(5));
+                    return false;
+                })
+            )
+        );
+
+        final ParseResults<Object> parse = subject.parse("foo 1", source);
+        assertThat(parse.getReader().getCursor(), is(4));
+        assertThat(parse.getContext().getNodes().size(), is(1));
+    }
+
     @SuppressWarnings("unchecked")
     @Test
     public void testExecuteAmbiguiousParentSubcommand() throws Exception {
@@ -258,6 +312,47 @@ public class CommandDispatcherTest {
 
     @SuppressWarnings("unchecked")
     @Test
+    public void testPreferExecuteLiteralOverArguments() throws Exception {
+        final Command<Object> literalCommand = mock(Command.class);
+        when(literalCommand.run(any())).thenReturn(100);
+
+        subject.register(
+            literal("test")
+                .then(
+                    argument("incorrect", StringArgumentType.word())
+                        .executes(command)
+                )
+                .then(
+                    literal("hello")
+                        .executes(literalCommand)
+                )
+        );
+
+        assertThat(subject.execute("test hello", source), is(100));
+        verify(literalCommand).run(any(CommandContext.class));
+        verify(command, never()).run(any());
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testExecuteAmbiguousArgumentIfImpermissibleLiteral() throws Exception {
+        subject.register(literal("foo")
+            .then(
+                literal("bar")
+                    .requires(source -> false)
+            )
+            .then(
+                argument("argument", StringArgumentType.word())
+                    .executes(command)
+            )
+        );
+
+        assertThat(subject.execute("foo bar", source), is(42));
+        verify(command).run(any(CommandContext.class));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
     public void testExecuteRedirectedMultipleTimes() throws Exception {
         final LiteralCommandNode<Object> concreteNode = subject.register(literal("actual").executes(command));
         final LiteralCommandNode<Object> redirectNode = subject.register(literal("redirected").redirect(subject.getRoot()));
@@ -273,6 +368,7 @@ public class CommandDispatcherTest {
 
         final CommandContextBuilder<Object> child1 = parse.getContext().getChild();
         assertThat(child1, is(notNullValue()));
+        assertThat(child1.getParent(), is(parse.getContext()));
         assertThat(child1.getRange().get(input), equalTo("redirected"));
         assertThat(child1.getNodes().size(), is(1));
         assertThat(child1.getRootNode(), is(subject.getRoot()));
@@ -281,6 +377,7 @@ public class CommandDispatcherTest {
 
         final CommandContextBuilder<Object> child2 = child1.getChild();
         assertThat(child2, is(notNullValue()));
+        assertThat(child2.getParent(), is(child1));
         assertThat(child2.getRange().get(input), equalTo("actual"));
         assertThat(child2.getNodes().size(), is(1));
         assertThat(child2.getRootNode(), is(subject.getRoot()));
@@ -400,4 +497,23 @@ public class CommandDispatcherTest {
     public void testFindNodeDoesntExist() {
         assertThat(subject.findNode(Lists.newArrayList("foo", "bar")), is(nullValue()));
     }
+
+    @Test
+    public void testCompletionWithErroredFutureReturnsCompletedFuture() {
+        final LiteralCommandNode<Object> bar = literal("bar").build();
+        final ArgumentCommandNode<Object, String> baz = argument("baz", StringArgumentType.word())
+            .suggests((context, builder) -> {
+                final CompletableFuture<Suggestions> future = new CompletableFuture<>();
+                future.completeExceptionally(new IllegalArgumentException());
+                return future;
+            })
+            .build();
+        subject.register(literal("foo").then(bar).then(baz));
+
+        final ParseResults<Object> parseResults = subject.parse("foo b", source);
+        final Suggestions suggestions = subject.getCompletionSuggestions(parseResults).join();
+        final Collection<String> suggestionCollection = suggestions.getList().stream().map(Suggestion::getText).collect(Collectors.toList());
+        assertThat(Lists.newArrayList("bar"), is(suggestionCollection));
+    }
+
 }

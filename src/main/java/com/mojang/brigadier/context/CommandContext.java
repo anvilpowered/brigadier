@@ -33,11 +33,12 @@ public class CommandContext<S> {
     private final CommandNode<S> rootNode;
     private final List<ParsedCommandNode<S>> nodes;
     private final StringRange range;
+    private CommandContext<S> parent;
     private final CommandContext<S> child;
     private final RedirectModifier<S> modifier;
     private final boolean forks;
 
-    public CommandContext(final S source, final String input, final Map<String, ParsedArgument<S, ?>> arguments, final Command<S> command, final CommandNode<S> rootNode, final List<ParsedCommandNode<S>> nodes, final StringRange range, final CommandContext<S> child, final RedirectModifier<S> modifier, boolean forks) {
+    private CommandContext(final S source, final String input, final Map<String, ParsedArgument<S, ?>> arguments, final Command<S> command, final CommandNode<S> rootNode, final List<ParsedCommandNode<S>> nodes, final StringRange range, final CommandContext<S> parent, final CommandContext<S> child, final RedirectModifier<S> modifier, boolean forks) {
         this.source = source;
         this.input = input;
         this.arguments = arguments;
@@ -50,11 +51,26 @@ public class CommandContext<S> {
         this.forks = forks;
     }
 
+    public CommandContext(final S source, final String input, final Map<String, ParsedArgument<S, ?>> arguments, final Command<S> command, final CommandNode<S> rootNode, final List<ParsedCommandNode<S>> nodes, final StringRange range, final CommandContext<S> child, final RedirectModifier<S> modifier, boolean forks) {
+        this(source, input, arguments, command, rootNode, nodes, range, null, child, modifier, forks);
+    }
+
     public CommandContext<S> copyFor(final S source) {
         if (this.source == source) {
             return this;
         }
-        return new CommandContext<>(source, input, arguments, command, rootNode, nodes, range, child, modifier, forks);
+        return new CommandContext<>(source, input, arguments, command, rootNode, nodes, range, parent, child, modifier, forks);
+    }
+
+    void setParent(final CommandContext<S> parent) {
+        if (this.parent != null) {
+            throw new IllegalArgumentException("Context already has a parent context");
+        }
+        this.parent = parent;
+    }
+
+    public CommandContext<S> getParent() {
+        return parent;
     }
 
     public CommandContext<S> getChild() {
@@ -105,6 +121,7 @@ public class CommandContext<S> {
         if (nodes.size() != that.nodes.size() || !nodes.equals(that.nodes)) return false;
         if (command != null ? !command.equals(that.command) : that.command != null) return false;
         if (!source.equals(that.source)) return false;
+        if (parent != null ? !parent.equals(that.parent) : that.parent != null) return false;
         if (child != null ? !child.equals(that.child) : that.child != null) return false;
 
         return true;
@@ -117,6 +134,7 @@ public class CommandContext<S> {
         result = 31 * result + (command != null ? command.hashCode() : 0);
         result = 31 * result + rootNode.hashCode();
         result = 31 * result + nodes.hashCode();
+        result = 31 * result + (parent != null ? parent.hashCode() : 0);
         result = 31 * result + (child != null ? child.hashCode() : 0);
         return result;
     }
@@ -141,7 +159,11 @@ public class CommandContext<S> {
         return nodes;
     }
 
-    public boolean hasNodes() {
+    public Map<String, ParsedArgument<S, ?>> getArguments() {
+        return arguments;
+    }
+
+  public boolean hasNodes() {
         return !nodes.isEmpty();
     }
 

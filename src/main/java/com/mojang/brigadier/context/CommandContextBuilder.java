@@ -15,6 +15,7 @@ import java.util.Map;
 
 public class CommandContextBuilder<S> {
     private final Map<String, ParsedArgument<S, ?>> arguments = new LinkedHashMap<>();
+    private final CommandContextBuilder<S> parent;
     private final CommandNode<S> rootNode;
     private final List<ParsedCommandNode<S>> nodes = new ArrayList<>();
     private final CommandDispatcher<S> dispatcher;
@@ -25,11 +26,16 @@ public class CommandContextBuilder<S> {
     private RedirectModifier<S> modifier = null;
     private boolean forks;
 
-    public CommandContextBuilder(final CommandDispatcher<S> dispatcher, final S source, final CommandNode<S> rootNode, final int start) {
+    public CommandContextBuilder(final CommandDispatcher<S> dispatcher, final S source, final CommandContextBuilder<S> parent, final CommandNode<S> rootNode, final int start) {
+        this.parent = parent;
         this.rootNode = rootNode;
         this.dispatcher = dispatcher;
         this.source = source;
         this.range = StringRange.at(start);
+    }
+
+    public CommandContextBuilder(final CommandDispatcher<S> dispatcher, final S source, final CommandNode<S> rootNode, final int start) {
+        this(dispatcher, source, null, rootNode, start);
     }
 
     public CommandContextBuilder<S> withSource(final S source) {
@@ -39,6 +45,10 @@ public class CommandContextBuilder<S> {
 
     public S getSource() {
         return source;
+    }
+
+    public CommandContextBuilder<S> getParent() {
+        return parent;
     }
 
     public CommandNode<S> getRootNode() {
@@ -68,7 +78,7 @@ public class CommandContextBuilder<S> {
     }
 
     public CommandContextBuilder<S> copy() {
-        final CommandContextBuilder<S> copy = new CommandContextBuilder<>(dispatcher, source, rootNode, range.getStart());
+        final CommandContextBuilder<S> copy = new CommandContextBuilder<>(dispatcher, source, parent, rootNode, range.getStart());
         copy.command = command;
         copy.arguments.putAll(arguments);
         copy.nodes.addAll(nodes);
@@ -104,7 +114,12 @@ public class CommandContextBuilder<S> {
     }
 
     public CommandContext<S> build(final String input) {
-        return new CommandContext<>(source, input, arguments, command, rootNode, nodes, range, child == null ? null : child.build(input), modifier, forks);
+        CommandContext<S> builtChild = child == null ? null : child.build(input);
+        CommandContext<S> built = new CommandContext<>(source, input, arguments, command, rootNode, nodes, range, builtChild, modifier, forks);
+        if (builtChild != null) {
+            builtChild.setParent(built);
+        }
+        return built;
     }
 
     public CommandDispatcher<S> getDispatcher() {
