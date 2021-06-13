@@ -23,13 +23,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BiPredicate;
 import java.util.function.Predicate;
 
 public abstract class CommandNode<S> implements Comparable<CommandNode<S>> {
-    private final Map<String, CommandNode<S>> children = new TreeMap<>();
+    private final Map<String, CommandNode<S>> children = new LinkedHashMap<>();
     private final Map<String, ArgumentCommandNode<S, ?>> arguments = new LinkedHashMap<>();
     private final Predicate<S> requirement;
     private final BiPredicate<CommandContextBuilder<S>, ImmutableStringReader> contextRequirement;
