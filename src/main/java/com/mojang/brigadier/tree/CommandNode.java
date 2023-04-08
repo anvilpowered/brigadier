@@ -6,6 +6,7 @@ package com.mojang.brigadier.tree;
 import com.mojang.brigadier.AmbiguityConsumer;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.RedirectModifier;
+import com.mojang.brigadier.SourceMappingContext;
 import com.mojang.brigadier.StringReader;
 import com.mojang.brigadier.builder.ArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
@@ -19,6 +20,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Predicate;
@@ -33,12 +35,29 @@ public abstract class CommandNode<S> implements Comparable<CommandNode<S>> {
     private final boolean forks;
     private Command<S> command;
 
-    protected CommandNode(final Command<S> command, final Predicate<S> requirement, final CommandNode<S> redirect, final RedirectModifier<S> modifier, final boolean forks) {
+    protected CommandNode(final Command<S> command,
+                          final Predicate<S> requirement,
+                          final CommandNode<S> redirect,
+                          final RedirectModifier<S> modifier,
+                          final boolean forks) {
         this.command = command;
         this.requirement = requirement;
         this.redirect = redirect;
         this.modifier = modifier;
         this.forks = forks;
+    }
+
+    /**
+     * @param <P> Previous type of the command source
+     */
+    protected <P> CommandNode(final CommandNode<P> previous,
+                              final SourceMappingContext<P, S> mapper) {
+        previous.children.forEach((ignored, node) -> addChild(node.mapSource(mapper)));
+        command = mapper.getRemapped(previous.command);
+        requirement = source -> previous.requirement.test(mapper.getOriginal(source));
+        redirect = mapper.getRemapped(previous.redirect);
+        modifier = mapper.getRemapped(previous.modifier);
+        forks = previous.forks;
     }
 
     public Command<S> getCommand() {
@@ -117,6 +136,7 @@ public abstract class CommandNode<S> implements Comparable<CommandNode<S>> {
     protected abstract boolean isValidInput(final String input);
 
     @Override
+    @SuppressWarnings("unchecked")
     public boolean equals(final Object o) {
         if (this == o) return true;
         if (!(o instanceof CommandNode)) return false;
@@ -124,7 +144,7 @@ public abstract class CommandNode<S> implements Comparable<CommandNode<S>> {
         final CommandNode<S> that = (CommandNode<S>) o;
 
         if (!children.equals(that.children)) return false;
-        if (command != null ? !command.equals(that.command) : that.command != null) return false;
+        if (!Objects.equals(command, that.command)) return false;
 
         return true;
     }
@@ -183,4 +203,6 @@ public abstract class CommandNode<S> implements Comparable<CommandNode<S>> {
     }
 
     public abstract Collection<String> getExamples();
+
+    public abstract <R> CommandNode<R> mapSource(final SourceMappingContext<S, R> mapper);
 }

@@ -3,6 +3,7 @@
 
 package com.mojang.brigadier.context;
 
+import com.mojang.brigadier.SourceMappingContext;
 import com.mojang.brigadier.tree.CommandNode;
 
 import java.util.Objects;
@@ -13,7 +14,7 @@ public class ParsedCommandNode<S> {
 
     private final StringRange range;
 
-    public ParsedCommandNode(CommandNode<S> node, StringRange range) {
+    public ParsedCommandNode(final CommandNode<S> node, final StringRange range) {
         this.node = node;
         this.range = range;
     }
@@ -26,18 +27,22 @@ public class ParsedCommandNode<S> {
         return range;
     }
 
+    public <P> ParsedCommandNode<P> mapSource(final SourceMappingContext<P, S> mapper) {
+        return new ParsedCommandNode<>(mapper.getOriginal(node), range);
+    }
+
     @Override
     public String toString() {
         return node + "@" + range;
     }
 
     @Override
-    public boolean equals(Object o) {
+    public boolean equals(final Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         ParsedCommandNode<?> that = (ParsedCommandNode<?>) o;
         return Objects.equals(node, that.node) &&
-                Objects.equals(range, that.range);
+            Objects.equals(range, that.range);
     }
 
     @Override

@@ -5,11 +5,13 @@ package com.mojang.brigadier.context;
 
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.RedirectModifier;
+import com.mojang.brigadier.SourceMappingContext;
 import com.mojang.brigadier.tree.CommandNode;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 public class CommandContext<S> {
 
@@ -37,7 +39,16 @@ public class CommandContext<S> {
     private final RedirectModifier<S> modifier;
     private final boolean forks;
 
-    public CommandContext(final S source, final String input, final Map<String, ParsedArgument<S, ?>> arguments, final Command<S> command, final CommandNode<S> rootNode, final List<ParsedCommandNode<S>> nodes, final StringRange range, final CommandContext<S> child, final RedirectModifier<S> modifier, boolean forks) {
+    public CommandContext(final S source,
+                          final String input,
+                          final Map<String, ParsedArgument<S, ?>> arguments,
+                          final Command<S> command,
+                          final CommandNode<S> rootNode,
+                          final List<ParsedCommandNode<S>> nodes,
+                          final StringRange range,
+                          final CommandContext<S> child,
+                          final RedirectModifier<S> modifier,
+                          boolean forks) {
         this.source = source;
         this.input = input;
         this.arguments = arguments;
@@ -48,6 +59,25 @@ public class CommandContext<S> {
         this.child = child;
         this.modifier = modifier;
         this.forks = forks;
+    }
+
+    public <P> CommandContext<P> mapSource(final SourceMappingContext<P, S> mapper) {
+        final Map<String, ParsedArgument<P, ?>> transformedArguments = new HashMap<>();
+        for (final Map.Entry<String, ParsedArgument<S, ?>> entry : arguments.entrySet()) {
+            transformedArguments.put(entry.getKey(), entry.getValue().mapSource());
+        }
+        return new CommandContext<P>(
+            mapper.getOriginal(source),
+            input,
+            transformedArguments,
+            mapper.getOriginal(command),
+            mapper.getOriginal(rootNode),
+            nodes.stream().map(node -> node.mapSource(mapper)).collect(Collectors.toList()),
+            range,
+            child == null ? null : mapper.getOriginal(child),
+            mapper.getOriginal(modifier),
+            forks
+        );
     }
 
     public CommandContext<S> copyFor(final S source) {

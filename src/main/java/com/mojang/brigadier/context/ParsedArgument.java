@@ -14,12 +14,21 @@ public class ParsedArgument<S, T> {
         this.result = result;
     }
 
+    private ParsedArgument(final StringRange range, final T result) {
+        this.range = range;
+        this.result = result;
+    }
+
     public StringRange getRange() {
         return range;
     }
 
     public T getResult() {
         return result;
+    }
+
+    public <P> ParsedArgument<P, T> mapSource() {
+        return new ParsedArgument<>(range, result);
     }
 
     @Override

@@ -5,6 +5,7 @@ package com.mojang.brigadier.tree;
 
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.RedirectModifier;
+import com.mojang.brigadier.SourceMappingContext;
 import com.mojang.brigadier.StringReader;
 import com.mojang.brigadier.arguments.ArgumentType;
 import com.mojang.brigadier.builder.RequiredArgumentBuilder;
@@ -28,11 +29,26 @@ public class ArgumentCommandNode<S, T> extends CommandNode<S> {
     private final ArgumentType<T> type;
     private final SuggestionProvider<S> customSuggestions;
 
-    public ArgumentCommandNode(final String name, final ArgumentType<T> type, final Command<S> command, final Predicate<S> requirement, final CommandNode<S> redirect, final RedirectModifier<S> modifier, final boolean forks, final SuggestionProvider<S> customSuggestions) {
+    public ArgumentCommandNode(final String name,
+                               final ArgumentType<T> type,
+                               final Command<S> command,
+                               final Predicate<S> requirement,
+                               final CommandNode<S> redirect,
+                               final RedirectModifier<S> modifier,
+                               final boolean forks,
+                               final SuggestionProvider<S> customSuggestions) {
         super(command, requirement, redirect, modifier, forks);
         this.name = name;
         this.type = type;
         this.customSuggestions = customSuggestions;
+    }
+
+    protected <P> ArgumentCommandNode(final ArgumentCommandNode<P, T> previous,
+                                      final SourceMappingContext<P, S> mapper) {
+        super(previous, mapper);
+        name = previous.name;
+        type = previous.type;
+        customSuggestions = previous.customSuggestions.mapSource(mapper);
     }
 
     public ArgumentType<T> getType() {
@@ -96,6 +112,7 @@ public class ArgumentCommandNode<S, T> extends CommandNode<S> {
     }
 
     @Override
+    @SuppressWarnings("rawtypes")
     public boolean equals(final Object o) {
         if (this == o) return true;
         if (!(o instanceof ArgumentCommandNode)) return false;
@@ -126,6 +143,11 @@ public class ArgumentCommandNode<S, T> extends CommandNode<S> {
 
     @Override
     public String toString() {
-        return "<argument " + name + ":" + type +">";
+        return "<argument " + name + ":" + type + ">";
+    }
+
+    @Override
+    public <R> ArgumentCommandNode<R, T> mapSource(final SourceMappingContext<S, R> context) {
+        return new ArgumentCommandNode<>(this, context);
     }
 }

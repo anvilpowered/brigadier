@@ -5,6 +5,7 @@ package com.mojang.brigadier.tree;
 
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.RedirectModifier;
+import com.mojang.brigadier.SourceMappingContext;
 import com.mojang.brigadier.StringReader;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
@@ -18,16 +19,29 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
 import java.util.function.Predicate;
 
 public class LiteralCommandNode<S> extends CommandNode<S> {
     private final String literal;
     private final String literalLowerCase;
 
-    public LiteralCommandNode(final String literal, final Command<S> command, final Predicate<S> requirement, final CommandNode<S> redirect, final RedirectModifier<S> modifier, final boolean forks) {
+    public LiteralCommandNode(final String literal,
+                              final Command<S> command,
+                              final Predicate<S> requirement,
+                              final CommandNode<S> redirect,
+                              final RedirectModifier<S> modifier,
+                              final boolean forks) {
         super(command, requirement, redirect, modifier, forks);
         this.literal = literal;
         this.literalLowerCase = literal.toLowerCase(Locale.ROOT);
+    }
+
+    public <P> LiteralCommandNode(final LiteralCommandNode<P> previous,
+                                  final SourceMappingContext<P, S> mapper) {
+        super(previous, mapper);
+        literal = previous.literal;
+        literalLowerCase = previous.literalLowerCase;
     }
 
     public String getLiteral() {
@@ -128,5 +142,10 @@ public class LiteralCommandNode<S> extends CommandNode<S> {
     @Override
     public String toString() {
         return "<literal " + literal + ">";
+    }
+
+    @Override
+    public <R> LiteralCommandNode<R> mapSource(final SourceMappingContext<S, R> mapper) {
+        return new LiteralCommandNode<>(this, mapper);
     }
 }

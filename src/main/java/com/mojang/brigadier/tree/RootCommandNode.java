@@ -3,6 +3,7 @@
 
 package com.mojang.brigadier.tree;
 
+import com.mojang.brigadier.SourceMappingContext;
 import com.mojang.brigadier.StringReader;
 import com.mojang.brigadier.builder.ArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
@@ -14,10 +15,16 @@ import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
 
 public class RootCommandNode<S> extends CommandNode<S> {
     public RootCommandNode() {
         super(null, c -> true, null, s -> Collections.singleton(s.getSource()), false);
+    }
+
+    public <P> RootCommandNode(final RootCommandNode<P> previous,
+                               final SourceMappingContext<P, S> mapper) {
+        super(previous, mapper);
     }
 
     @Override
@@ -69,5 +76,10 @@ public class RootCommandNode<S> extends CommandNode<S> {
     @Override
     public String toString() {
         return "<root>";
+    }
+
+    @Override
+    public <R> RootCommandNode<R> mapSource(final SourceMappingContext<S, R> mapper) {
+        return new RootCommandNode<>(this, mapper);
     }
 }
